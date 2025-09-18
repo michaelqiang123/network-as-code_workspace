@@ -1,0 +1,23 @@
+---
+apic:
+  interface_policies:
+    nodes:
+      - id: 101
+        interfaces:
+          - port: 40
+            policy_group: 10G-SERVER
+            description: server1_nic1
+          - port: 41
+            policy_group: APIC
+            description: apic1
+          # - port: 49
+          #   description: To spine 201 eth5/1
+          #   fabric: true
+          - port: 10
+            fex_id: 110
+        fexes:
+          - id: 110
+            interfaces:
+              - port: 1
+                description: Test FEX port
+                policy_group: 10G-SERVER

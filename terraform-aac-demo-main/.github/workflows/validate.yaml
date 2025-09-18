@@ -1,0 +1,97 @@
+---
+name: Validate
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - staging
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  yaml-lint:
+    runs-on: [self-hosted, DLLAB, Linux, x64]
+    timeout-minutes: 5
+    outputs:
+      summary: ${{ steps.yaml_lint.outputs.summary }}
+
+    steps:
+      - name: Check workspace
+        id: check_workspace
+        run: |
+          pwd
+          whoami
+          echo "${{ github.workspace }}"
+          ls -l ${{ github.workspace }}
+          git status
+
+      - name: Checkout Code
+        id: git_checkout
+        uses: actions/checkout@v5
+      
+      - name: yaml lint
+        id: yaml_lint
+        run: |
+          set -o pipefail
+          yamllint ./data/
+
+  iac-validate:
+    runs-on: [self-hosted, DLLAB, Linux, x64]
+    timeout-minutes: 5
+    outputs:
+      summary: ${{ steps.iac-validate.outputs.summary }}
+
+    steps:
+      - name: Checkout Code
+        id: git_checkout
+        uses: actions/checkout@v5
+
+      - name: Run iac-validate
+        id: iac_validate
+        run: |
+          set -o pipefail
+          iac-validate ./data/ -r ./validation/rules/ -v ERROR -s ./validation/apic_schema.yaml
+
+  send-webex-notification:
+    runs-on: [self-hosted, DLLAB, Linux, x64]
+    timeout-minutes: 5
+    needs: [yaml-lint, iac-validate]
+    if: always()
+    steps:
+      - name: Check Job Status
+        run: |
+          if [ ${{ needs.yaml-lint.result }} == 'success' ] && [ ${{ needs.iac-validate.result }} == 'success' ]; then
+            echo "All jobs succeeded"
+            echo "jobSuccess=success" >> $GITHUB_ENV
+          else
+            echo "Not all jobs succeeded"
+            echo "jobSuccess=fail" >> $GITHUB_ENV
+          fi
+        id: print_status
+
+      - name: Send Webex Notifcation
+        env:
+          Job_STATUS: ${{ env.jobSuccess }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          GITHUB_COMMIT_URL: ${{ github.event.head_commit.url }}
+          GITHUB_PULL_MESSAGE: ${{ github.event.pull_request.title }}
+          GITHUB_PULL_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_AUTHER: ${{ github.event.sender.login }}
+          GITHUB_BRANCH: ${{ github.ref }} ${{ github.head_ref }}
+          GITHUB_EVENT: ${{ github.event_name }}
+          JF_URL: "${{vars.JFROG_URL}}"
+          JF_REPOSITORY: ${{ vars.JFROG_REPOSITORY }}
+          BEAR_TOKEN: ${{secrets.WEBEX_ROBOT_TOKEN}}
+          ROOMID: ${{secrets.WEBEX_ROOMID}}
+          WORKFLOW_NAME: "YAML files Validation"
+          TEXT_MESSAGE: ":loud_sound: *iac-validate output*\n *yaml-lint output       ${{ (needs.yaml-lint.result == 'success' && '✅') || '❌' }}*\n*iac-validate      ${{ (needs.iac-validate.result == 'success' && '✅') || '❌' }}*\n"
+          REQ_TIMEOUT: 60
+
+        run: |
+          python3 .ci/send_webex_notification.py

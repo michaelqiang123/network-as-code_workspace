@@ -1,0 +1,36 @@
+---
+name: accordion-pr-comment
+description: Post PR comment with collapsible block
+inputs:
+  header:
+    description: Header comment
+    required: true
+  body_file:
+    description: Body comment file
+    required: true
+  url:
+    description: Posted PR URL
+    required: true
+  token:
+    description: Github token
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: post
+      shell: bash
+      env:
+        GH_ENTERPRISE_TOKEN: ${{ inputs.token }}
+        COMMENT_FILE: pr_comment.txt
+      run: |
+        echo "${{ inputs.header }}" > ${COMMENT_FILE}
+        echo "<details>" >> ${COMMENT_FILE}
+        echo "" >> ${COMMENT_FILE}
+        echo "\`\`\`" >> ${COMMENT_FILE}
+        cat ${{ inputs.body_file }} >> ${COMMENT_FILE}
+        echo "\`\`\`" >> ${COMMENT_FILE}
+        echo "" >> ${COMMENT_FILE}
+        echo "</details>" >> ${COMMENT_FILE}
+        gh pr comment ${{ inputs.url }} -F ${COMMENT_FILE}
+

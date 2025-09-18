@@ -1,0 +1,83 @@
+---
+apic:
+  tenants:
+    - name: PROD
+
+      vrfs:
+        - name: VRF1
+        - name: VRF2
+        - name: VRF3
+
+      bridge_domains:
+        - name: BD_VLAN3000
+          virtual_mac: 00:23:BD:F8:19:12
+          vrf: VRF1
+          subnets:
+            - ip: 10.3.0.1/24
+
+        - name: BD_VLAN3001
+          virtual_mac: 00:23:BD:F8:19:13
+          vrf: VRF2
+          subnets:
+            - ip: 10.3.1.1/24
+
+        - name: BD_VLAN3002
+          virtual_mac: 00:23:BD:F8:19:14
+          vrf: VRF2
+          subnets:
+            - ip: 10.3.2.1/24
+
+        - name: BD_VLAN3003
+          virtual_mac: 00:23:BD:F8:19:15
+          vrf: VRF1
+          subnets:
+            - ip: 10.3.3.1/24
+
+        - name: BD_VLAN3004
+          virtual_mac: 00:23:BD:F8:19:15
+          vrf: VRF1
+          subnets:
+            - ip: 10.3.4.1/24
+
+
+      application_profiles:
+        - name: PROD
+          endpoint_groups:
+            - name: EPG_VLAN3000
+              bridge_domain: BD_VLAN3000
+              physical_domains:
+                - PHYSICAL1
+              static_ports:
+                - node_id: 101
+                  port: 40
+                  vlan: 3000
+
+            - name: EPG_VLAN3001
+              bridge_domain: BD_VLAN3001
+              physical_domains:
+                - PHYSICAL1
+              static_ports:
+                - node_id: 101
+                  port: 40
+                  vlan: 3001
+
+      l3outs:
+        - name: L3OUT1
+          vrf: VRF1
+          domain: ROUTED1
+          node_profiles:
+            - name: NODE_101
+              nodes:
+                - node_id: 101
+                  router_id: 5.5.5.5
+                  static_routes:
+                    - prefix: 2.2.2.0/24
+                      description: My Desc
+                      next_hops:
+                        - ip: 6.6.6.6
+              interface_profiles:
+                - name: NODE_101
+                  interfaces:
+                    - node_id: 101
+                      port: 10
+                      ip: 14.14.14.1/24

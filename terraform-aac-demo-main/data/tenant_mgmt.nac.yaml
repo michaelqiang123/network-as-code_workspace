@@ -1,0 +1,44 @@
+---
+apic:
+  tenants:
+    - name: mgmt
+      managed: false
+
+      bridge_domains:
+        - name: inb
+          virtual_mac: 00:23:BD:F8:19:12
+          vrf: inb
+          subnets:
+            - ip: 10.10.1.254/24
+
+      inb_endpoint_groups:
+        - name: default
+          vlan: 2
+          bridge_domain: inb
+
+      oob_endpoint_groups:
+        - name: default
+          oob_contracts:
+            providers:
+              - OOB-CON1
+
+      ext_mgmt_instances:
+        - name: EXT1
+          subnets:
+            - 0.0.0.0/0
+          oob_contracts:
+            consumers:
+              - OOB-CON1
+
+      filters:
+        - name: OOB-FILTER1
+          entries:
+            - name: ALL
+              ethertype: unspecified
+
+      oob_contracts:
+        - name: OOB-CON1
+          subjects:
+            - name: OOB-SUB1
+              filters:
+                - filter: OOB-FILTER1

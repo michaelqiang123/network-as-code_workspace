@@ -1,0 +1,118 @@
+---
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  Create_APIC_Snapshot:
+    runs-on: [self-hosted, DLLAB, Linux, x64]
+    timeout-minutes: 10
+    steps:          
+      - name: Checkout Code
+        id: git_checkout
+        uses: actions/checkout@v5
+
+      - name: Create_APIC_Snapshot
+        env:
+          APIC_URL: ${{ vars.APIC_SIM_URL }}
+          APIC_USERNAME: ${{ secrets.APIC_SIM_USER }}
+          APIC_PASSWORD: ${{ secrets.APIC_SIM_PWD }}
+        run: |
+          python3 .ci/create_apic_snapshot.py
+
+  Simulator_Deploy:
+    runs-on: [self-hosted, DLLAB, Linux, x64]
+    timeout-minutes: 30
+    needs: [Create_APIC_Snapshot]
+    if: ${{ needs.Create_APIC_Snapshot.result }} == 'success' }}
+    steps:
+      - name: Checkout Code
+        id: git_checkout
+        uses: actions/checkout@v5
+
+      - name: Run Terraform Apply
+        id: tf_apply
+        env:
+          TF_VAR_apic_url: "${{ vars.APIC_SIM_URL }}"
+          TF_VAR_apic_username: "${{ secrets.APIC_SIM_USER }}"
+          TF_VAR_apic_password: "${{ secrets.APIC_SIM_PWD }}"
+        run: |
+          set TF_LOG=TRACE
+          terraform init --backend-config="conn_str=${{ secrets.PG_CONN_STR }}"  --backend-config="schema_name=${{ secrets.PG_SCHEMA_SIMULATOR }}"
+          terraform plan -out plan.tfplan
+          terraform apply plan.tfplan
+
+      - name: Test Idempotency
+        id: test-idempotency
+        continue-on-error: true
+        env:
+          TF_VAR_apic_url: "${{ vars.APIC_SIM_URL }}"
+          TF_VAR_apic_username: "${{ secrets.APIC_SIM_USER }}"
+          TF_VAR_apic_password: "${{ secrets.APIC_SIM_PWD }}"
+        run: |
+          terraform plan -detailed-exitcode 
+
+      - name: Run Robot Auatomation Tests
+        id: iac-test
+        continue-on-error: true
+        env:
+          ACI_URL: ${{ vars.APIC_SIM_URL }}
+          ACI_USERNAME: ${{ secrets.APIC_SIM_USER }}
+          ACI_PASSWORD: ${{ secrets.APIC_SIM_PWD }}
+        run: |
+          set -o pipefail
+          iac-test --data ./data --data ./defaults.yaml --templates ./tests/templates -f  ./tests/filters --output ./tests_results/
+      
+      - name: Save Auatomation Tests results
+        id: upload-test-results
+        uses: actions/upload-artifact@v4
+        with:
+          name:  test-results
+          path: |
+            ./tests_results/*.html
+            ./tests_results/*.xml
+
+  Send_Webex_Notification:
+    runs-on: [self-hosted, DLLAB, Linux, x64]
+    timeout-minutes: 5
+    needs: [Create_APIC_Snapshot, Simulator_Deploy]
+    if: always()
+    steps:
+      - name: Check Job Status
+        run: |
+          if [ ${{ needs.Create_APIC_Snapshot.result }} == 'success' ] && [ ${{ needs.Simulator_Deploy.result }} == 'success' ]; then
+            echo "All jobs succeeded"
+            echo "jobSuccess=success" >> $GITHUB_ENV
+          else
+            echo "Not all jobs succeeded"
+            echo "jobSuccess=fail" >> $GITHUB_ENV
+          fi
+        id: print_status
+
+      - name: Send Webex Notifcation
+        env:
+          Job_STATUS: ${{ env.jobSuccess }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          GITHUB_COMMIT_URL: ${{ github.event.head_commit.url }}
+          GITHUB_PULL_MESSAGE: ${{ github.event.pull_request.title }}
+          GITHUB_PULL_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_AUTHER: ${{ github.event.sender.login }}
+          GITHUB_BRANCH: ${{ github.ref }} ${{ github.head_ref }}
+          GITHUB_EVENT: ${{ github.event_name }}
+          JF_URL: "${{vars.JFROG_URL}}"
+          JF_REPOSITORY: ${{ vars.JFROG_REPOSITORY }}
+          BEAR_TOKEN: ${{secrets.WEBEX_ROBOT_TOKEN}}
+          ROOMID: ${{secrets.WEBEX_ROOMID}}
+          WORKFLOW_NAME: "Terraform Deploy on APIC Simulator"
+          TEXT_MESSAGE: ":loud_sound: *Simulator_Deploy Result*\n *Create_APIC_Snapshot       ${{ (needs.Create_APIC_Snapshot.result == 'success' && '✅') || '❌' }}*\n*Simulator_Deploy      ${{ (needs.Simulator_Deploy.result == 'success' && '✅') || '❌' }}*\n"
+          REQ_TIMEOUT: 60
+
+        run: |
+          python3 .ci/send_webex_notification.py

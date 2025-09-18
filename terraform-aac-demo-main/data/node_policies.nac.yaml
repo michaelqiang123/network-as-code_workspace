@@ -1,0 +1,70 @@
+---
+apic:
+  node_policies:
+    inb_endpoint_group: default
+    oob_endpoint_group: default
+
+    vpc_groups:
+      mode: explicit
+      groups:
+        - id: 101
+          switch_1: 101
+          switch_2: 102
+
+    nodes:
+      - id: 101
+        pod: 1
+        role: leaf
+        serial_number: TEP-1-101
+        name: leaf-1
+        oob_address: 10.10.0.101/24
+        oob_gateway: 10.10.0.254
+        oob_v6_address: 2001::6/64
+        oob_v6_gateway: 2001::1
+        inb_address: 10.10.1.101/24
+        inb_gateway: 10.10.1.254
+        inb_v6_address: 2001::101/64
+        inb_v6_gateway: 2001::1
+        fabric_policy_group: ALL_LEAFS
+        access_policy_group: ALL_LEAFS
+
+      - id: 102
+        pod: 1
+        role: leaf
+        serial_number: TEP-1-102
+        name: leaf-2
+        oob_address: 10.10.0.102/24
+        oob_gateway: 10.10.0.254
+        oob_v6_address: 2001::7/64
+        oob_v6_gateway: 2001::1
+        inb_address: 10.10.1.102/24
+        inb_gateway: 10.10.1.254
+        inb_v6_address: 2001::102/64
+        inb_v6_gateway: 2001::1
+        fabric_policy_group: ALL_LEAFS
+        access_policy_group: ALL_LEAFS
+
+      - id: 201
+        pod: 1
+        role: spine
+        serial_number: TEP-1-103
+        name: spine-1
+        oob_address: 10.10.0.201/24
+        oob_gateway: 10.10.0.254
+        oob_v6_address: 2001::8/64
+        oob_v6_gateway: 2001::1
+        inb_address: 10.10.1.201/24
+        inb_gateway: 10.10.1.254
+        inb_v6_address: 2001::201/64
+        inb_v6_gateway: 2001::1
+        fabric_policy_group: ALL_SPINES
+        access_policy_group: ALL_SPINES
+
+      - id: 1
+        pod: 1
+        role: apic
+        name: apic1
+        inb_address: 10.10.1.1/24
+        inb_gateway: 10.10.1.254
+        inb_v6_address: 2001::10/64
+        inb_v6_gateway: 2001::1

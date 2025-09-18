@@ -1,0 +1,116 @@
+---
+name: Plan
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  Terraform_Plan:
+    runs-on: [self-hosted, DLLAB, Linux, x64]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Code
+        id: git_checkout
+        uses: actions/checkout@v5
+
+      - name: Terraform_Plan
+        id: tf_plan
+        env:
+          TF_VAR_apic_url: "${{ vars.APIC_SIM_URL }}"
+          TF_VAR_apic_username: "${{ secrets.APIC_SIM_USER }}"
+          TF_VAR_apic_password: "${{ secrets.APIC_SIM_PWD }}"
+        run: |
+          terraform init --backend-config="conn_str=${{ secrets.PG_CONN_STR }}"  --backend-config="schema_name=${{ secrets.PG_SCHEMA_SIMULATOR }}"
+          terraform plan -no-color -out plan.tfplan
+          terraform show -no-color -json plan.tfplan | tee terraform-plan.txt
+
+      - name: Add Pull Request Comment Terraform Plan
+        if: always()
+        id: plan_pr_comment
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GH_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const output = `#### Terraform Plan \`${{ (steps.tf_plan.outcome == 'success' && '✅') || '❌' }}\`
+            *Pusher: @${{ github.actor }}*`;
+            let outputWithlog = output;
+
+            if  (fs.existsSync('terraform-plan.txt'))  {
+              const log = fs.readFileSync('terraform-plan.txt', 'utf8');
+
+              const MAX_GITHUB_COMMENT_LENGTH = 65536 - 100;
+              if (log.length > MAX_GITHUB_COMMENT_LENGTH) {
+                outputWithlog = `
+                ${output}
+                <details>
+                <summary>Click Show More Detail</summary>
+                <pre><code>
+                Please review terraform plan in github actions logs because it's too long"             
+                </code></pre>
+                </details>
+                `
+              }
+              else {
+                outputWithlog = `
+                ${output}
+                <details>
+                <summary>Click Show More Detail</summary>
+                <pre><code>
+                ${log}
+                </code></pre>
+                </details>
+                `
+              }
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: outputWithlog
+            })      
+
+  Send_Webex_Notification:
+    runs-on: [self-hosted, DLLAB, Linux, x64]
+    timeout-minutes: 5
+    needs: [Terraform_Plan]
+    if: always()
+    steps:
+      - name: Check Job Status
+        run: |
+          if [ ${{ needs.Terraform_Plan.result }} == 'success' ]; then
+            echo "All jobs succeeded"
+            echo "jobSuccess=success" >> $GITHUB_ENV
+          else
+            echo "Not all jobs succeeded"
+            echo "jobSuccess=fail" >> $GITHUB_ENV
+          fi
+        id: print_status
+
+      - name: Send Webex Notifcation
+        env:
+          Job_STATUS: ${{ env.jobSuccess }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          GITHUB_COMMIT_URL: ${{ github.event.head_commit.url }}
+          GITHUB_PULL_MESSAGE: ${{ github.event.pull_request.title }}
+          GITHUB_PULL_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_AUTHER: ${{ github.event.sender.login }}
+          GITHUB_BRANCH: ${{ github.ref }} ${{ github.head_ref }}
+          GITHUB_EVENT: ${{ github.event_name }}
+          JF_URL: "${{vars.JFROG_URL}}"
+          JF_REPOSITORY: ${{ vars.JFROG_REPOSITORY }}
+          BEAR_TOKEN: ${{secrets.WEBEX_ROBOT_TOKEN}}
+          ROOMID: ${{secrets.WEBEX_ROOMID}}
+          WORKFLOW_NAME: "Terraform Plan on APIC Simulator"
+          TEXT_MESSAGE: ":loud_sound: *Simulator_Plan Result*\n *Terraform_Plan       ${{ (needs.Terraform_Plan.result == 'success' && '✅') || '❌' }}*\n"
+          REQ_TIMEOUT: 60
+
+        run: |
+          python3 .ci/send_webex_notification.py

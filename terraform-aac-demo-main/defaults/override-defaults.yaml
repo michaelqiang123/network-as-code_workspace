@@ -1,0 +1,10 @@
+---
+defaults:
+  apic:
+    fabric_policies:
+      global_settings:
+        reallocate_gipo: true
+      aaa:
+        management_settings:
+          password_change_during_interval: false
+          include_refresh_session_records: true
